@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <link rel="icon" href="../../favicon.ico">
+
+    <title>Michael Park</title>
+
+    <!-- Bootstrap core CSS -->
+    <link href="bootstrap/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Custom styles for this template -->
+    <link href="blog.css" rel="stylesheet">
+
+    <!-- IE10 viewport hack for Surface/desktop Windows 8 bug -->
+    <link href="css/ie10-viewport-bug-workaround.css" rel="stylesheet">
+
+    <!-- Custom styles for this template -->
+    <link href="css/jumbotron-narrow.css" rel="stylesheet">
+
+    <!-- Just for debugging purposes. Don't actually copy these 2 lines! -->
+    <!--[if lt IE 9]><script src="../../assets/js/ie8-responsive-file-warning.js"></script><![endif]-->
+    <script src="../../assets/js/ie-emulation-modes-warning.js"></script>
+  </head>
+
+  <body>
+
+    <div class="container">
+      <div class="header clearfix">
+        <nav>
+          <ul class="nav nav-pills pull-right">
+            <li role="presentation"><a href="index.html">Home</a></li>
+            <li role="presentation" class="active"><a href="#">Notes</a></li>
+            <li role="presentation"><a href="files/web_CV.pdf">CV</a></li>
+            <li role="presentation"><a href="https://github.com/Michae1Park">Github</a></li>
+          </ul>
+        </nav>
+        <h3 class="text-muted">Michael Park</h3>
+      </div>
+    </div>
+
+<!--     <div class="blog-header">
+      <div class="container">
+        <h1 class="blog-title">The Bootstrap Blog</h1>
+        <p class="lead blog-description">An example blog template built with Bootstrap.</p>
+      </div>
+    </div>
+ -->
+    <div class="container">
+
+      <div class="row">
+
+        <div class="col-sm-8 blog-main">
+
+          <!-- ====================== -->
+          <!-- Post #1 -->
+          <!-- ====================== -->
+          <div class="blog-post">
+            <h2 class="blog-post-title">Caffe as a Tool (Part 1)</h2>
+            <p class="blog-post-meta">July 19, 2017 by <a href="#">Michael Park</a></p>
+
+            <p>This post contains the notes about how I used caffe to prepare my own data, train it on caffe models, and port the trained model to mobile platforms to create a deep learning application. Part 1 describes how to prepare and train custom data on caffe models.</p>
+            <hr>
+            <p> First, prepare a set of images for training and validation, or for convience, if available, download a dataset from a database such as <a href="http://vision.stanford.edu/aditya86/ImageNetDogs/."> Dog Dataset from Stanford Vision Lab</a>. 
+            
+            <br><br>
+            Caffe needs datasets packed in LMDB formats for training. Before we do that, we first need to split the dataset into a training set and a validation set and generate a <strong>train.txt</strong> and a <strong>val.txt</strong>, which will look something like below.
+            
+            <pre><code>
+            ...
+            ILSVRC2012_val_00000005.JPEG 516
+            ILSVRC2012_val_00000006.JPEG 57
+            ILSVRC2012_val_00000007.JPEG 334
+            ILSVRC2012_val_00000008.JPEG 415
+            ILSVRC2012_val_00000009.JPEG 674
+            ...</code></pre> 
+            To generate the files, one can write a script or use a csv format. Or use scripts written by others. (1)<a href="https://medium.com/@alexrachnog/using-caffe-with-your-own-dataset-b0ade5d71233">This link contains a great tutorial and a script for generating those two files.</a> (2) <a href="https://github.com/Junsong-Wang/pet-breed">This is a link to a repo that contains a script and pre-trained models.</a>
+
+            
+            <h3>Next Procedures</h3>
+            <ul>
+              <li>Pack data into an LMDB format. Modify <strong>EXAMPLE, DATA, TRAIN_DATA_ROOT, VAL_DATA_ROOT</strong> paths and set <strong>RESIZE=true</strong>. For the pieces of code, don't forget to set <strong> $DATA/train.txt, $DATA/val.txt, $EXAMPLE/dogs_train_lmdb, $EXAMPLE/dogs_val_lmdb </strong>. Now finally run <br><br>
+              <pre><code>caffe/examples/imagenet/create_imagenet.sh</code></pre>
+              </li>
+              <li>Run below to generate binary proto files.<br><br>
+                <pre><code>caffe/examples/imagenet/make_mean.sh</code></pre>
+              </li>
+              <li>I used google net to train this data. Modify /caffe/models/blvc_googlenet with two things in mind. LMBD paths must be correctly specified and num_output in loss1/classifier, loss2/classifier, loss3/classifier (google_net has three of those layers) should match the number of classes of the dataset. For dog dataset it is 120. <br><br>
+                <pre><code>layer {
+  name: "loss1/classifier"
+  type: "InnerProduct"
+  bottom: "loss1/fc"
+  top: "loss1/classifier"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  inner_product_param {
+    num_output: <strong>120</strong>
+    weight_filler {
+      type: "xavier"
+      std: 0.0009765625
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layer {
+  name: "loss1/loss"
+  type: "SoftmaxWithLoss"
+  bottom: "loss1/classifier"
+  bottom: "label"
+  top: "loss1/loss1"
+  loss_weight: 0.3
+}
+layer {
+  name: "loss1/top-1"
+  type: "Accuracy"
+  bottom: "loss1/classifier"
+  bottom: "label"
+  top: "loss1/top-1"
+  include {
+    phase: TEST
+  }
+}
+layer {
+  name: "loss1/top-5"
+  type: "Accuracy"
+  bottom: "loss1/classifier"
+  bottom: "label"
+  top: "loss1/top-5"
+  include {
+    phase: TEST
+  }
+  accuracy_param {
+    top_k: 5
+  }
+}</code></pre>
+              </li>
+              <li>Now lets train by executing below. Make sure to use the GPUs for training this because training this data and model on a CPU will take a very very very very very long time!!!<br><br>
+                <pre><code>./build/tools/caffe train -solver models/bvlc_googlenet/quick_solver.prototxt</code></pre>
+              </li>
+              
+              <li>Run below to see if the model was trained well. <br><br>
+                <pre><code>./build/examples/cpp_classification/classification.bin \
+  models/my_dogidnet/deploy.prototxt \
+  models/my_dogidnet/model.caffemodel \
+  data/dogs/dogidnet_mean.binaryproto \
+  data/dogs/synset.txt \
+  examples/dog_id/Images/n02085620-Chihuahua/n02085620_7.jpg</code></pre>
+              </li>
+            </ul>
+      </p>
+            
+
+
+            <!-- <blockquote>
+              <p>Curabitur blandit tempus porttitor. <strong>Nullam quis risus eget urna mollis</strong> ornare vel eu leo. Nullam id dolor id nibh ultricies vehicula ut id elit.</p>
+            </blockquote>
+            <p>Etiam porta <em>sem malesuada magna</em> mollis euismod. Cras mattis consectetur purus sit amet fermentum. Aenean lacinia bibendum nulla sed consectetur.</p>
+             -->
+          <!-- /.blog-post -->
+
+
+          <!-- ====================== -->
+          <!-- Post #2 -->
+          <!-- ======================-->
+<!--           <div class="blog-post">
+            <h2 class="blog-post-title">Another blog post</h2>
+            <p class="blog-post-meta">December 23, 2013 by <a href="#">Jacob</a></p>
+
+            <p>Cum sociis natoque penatibus et magnis <a href="#">dis parturient montes</a>, nascetur ridiculus mus. Aenean eu leo quam. Pellentesque ornare sem lacinia quam venenatis vestibulum. Sed posuere consectetur est at lobortis. Cras mattis consectetur purus sit amet fermentum.</p>
+            <blockquote>
+              <p>Curabitur blandit tempus porttitor. <strong>Nullam quis risus eget urna mollis</strong> ornare vel eu leo. Nullam id dolor id nibh ultricies vehicula ut id elit.</p>
+            </blockquote>
+            <p>Etiam porta <em>sem malesuada magna</em> mollis euismod. Cras mattis consectetur purus sit amet fermentum. Aenean lacinia bibendum nulla sed consectetur.</p>
+            <p>Vivamus sagittis lacus vel augue laoreet rutrum faucibus dolor auctor. Duis mollis, est non commodo luctus, nisi erat porttitor ligula, eget lacinia odio sem nec elit. Morbi leo risus, porta ac consectetur ac, vestibulum at eros.</p>
+          </div> --><!-- /.blog-post -->
+<!-- 
+          <div class="blog-post">
+            <h2 class="blog-post-title">New feature</h2>
+            <p class="blog-post-meta">December 14, 2013 by <a href="#">Chris</a></p>
+
+            <p>Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Aenean lacinia bibendum nulla sed consectetur. Etiam porta sem malesuada magna mollis euismod. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
+            <ul>
+              <li>Praesent commodo cursus magna, vel scelerisque nisl consectetur et.</li>
+              <li>Donec id elit non mi porta gravida at eget metus.</li>
+              <li>Nulla vitae elit libero, a pharetra augue.</li>
+            </ul>
+            <p>Etiam porta <em>sem malesuada magna</em> mollis euismod. Cras mattis consectetur purus sit amet fermentum. Aenean lacinia bibendum nulla sed consectetur.</p>
+            <p>Donec ullamcorper nulla non metus auctor fringilla. Nulla vitae elit libero, a pharetra augue.</p>
+          </div> --><!-- /.blog-post -->
+
+<!--           <nav class="blog-pagination">
+            <a class="btn btn-outline-primary" href="#">Older</a>
+            <a class="btn btn-outline-secondary disabled" href="#">Newer</a>
+          </nav>
+
+        </div> --><!-- /.blog-main -->
+
+
+
+
+<!-- ================================ -->
+<!-- Side Bars -->
+<!-- ================================ -->
+
+<!--         <div class="col-sm-3 offset-sm-1 blog-sidebar">
+          <div class="sidebar-module sidebar-module-inset">
+            <h4>About</h4>
+            <p>Etiam porta <em>sem malesuada magna</em> mollis euismod. Cras mattis consectetur purus sit amet fermentum. Aenean lacinia bibendum nulla sed consectetur.</p>
+          </div>
+          <div class="sidebar-module">
+            <h4>Archives</h4>
+            <ol class="list-unstyled">
+              <li><a href="#">March 2014</a></li>
+              <li><a href="#">February 2014</a></li>
+              <li><a href="#">January 2014</a></li>
+              <li><a href="#">December 2013</a></li>
+              <li><a href="#">November 2013</a></li>
+              <li><a href="#">October 2013</a></li>
+              <li><a href="#">September 2013</a></li>
+              <li><a href="#">August 2013</a></li>
+              <li><a href="#">July 2013</a></li>
+              <li><a href="#">June 2013</a></li>
+              <li><a href="#">May 2013</a></li>
+              <li><a href="#">April 2013</a></li>
+            </ol>
+          </div>
+          <div class="sidebar-module">
+            <h4>Elsewhere</h4>
+            <ol class="list-unstyled">
+              <li><a href="#">GitHub</a></li>
+              <li><a href="#">Twitter</a></li>
+              <li><a href="#">Facebook</a></li>
+            </ol>
+          </div>
+        </div> --><!-- /.blog-sidebar -->
+
+      </div><!-- /.row -->
+
+    </div><!-- /.container -->
+
+
+    <!-- Bootstrap core JavaScript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="https://code.jquery.com/jquery-3.1.1.slim.min.js" integrity="sha384-A7FZj7v+d/sdmMqp/nOQwliLvUsJfDHW+k9Omg/a/EheAdgtzNs3hpfag6Ed950n" crossorigin="anonymous"></script>
+    <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery.min.js"><\/script>')</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tether/1.4.0/js/tether.min.js" integrity="sha384-DztdAPBWPRXSA/3eYEEUWrWCy7G5KFbe8fFjk5JAIxUYHKkDx6Qin1DkWx51bBrb" crossorigin="anonymous"></script>
+    <script src="../../dist/js/bootstrap.min.js"></script>
+    <!-- IE10 viewport hack for Surface/desktop Windows 8 bug -->
+    <script src="../../assets/js/ie10-viewport-bug-workaround.js"></script>
+  </body>
+</html>
